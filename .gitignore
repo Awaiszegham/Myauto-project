@@ -22,3 +22,4 @@ test_report_*.json
 # OS generated files
 .DS_Store
 Thumbs.db
+\"src/database/app.db\" 
