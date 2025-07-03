@@ -17,7 +17,7 @@ class GeminiCLIService:
         """Check if Gemini CLI is available and properly configured. Returns a dict with details."""
         try:
             result = subprocess.run(
-                [self.cli_command, "--version"],
+                [self.cli_command, "languages"],
                 capture_output=True,
                 text=True,
                 timeout=10,
