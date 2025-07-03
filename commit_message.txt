@@ -1,0 +1,4 @@
+feat: Link VideoTask to User
+
+- Added user_id foreign key to VideoTask model.
+- Updated start-dubbing API to accept user_id.
