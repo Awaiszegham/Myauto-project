@@ -224,8 +224,9 @@ class TestYouTubeService(unittest.TestCase):
     
     @patch('googleapiclient.discovery.build')
     @patch('google.oauth2.credentials.Credentials.from_authorized_user_file')
+    @patch('google_auth_oauthlib.flow.InstalledAppFlow')
     @patch('os.path.exists')
-    def test_get_youtube_api_with_existing_token(self, mock_exists, mock_creds_from_file, mock_build):
+    def test_get_youtube_api_with_existing_token(self, mock_exists, mock_flow_class, mock_creds_from_file, mock_build):
         """Test YouTube API initialization with existing token."""
         # Setup service with credentials
         service = YouTubeService(
@@ -234,9 +235,9 @@ class TestYouTubeService(unittest.TestCase):
         )
         
         mock_exists.return_value = True
-        mock_creds = MagicMock()
-        mock_creds.valid = False # Force the flow to run and call build
-        mock_creds_from_file.return_value = mock_creds
+        mock_creds_from_file.return_value = None # Force the flow to run
+
+        mock_flow_class.from_client_secrets_file.return_value = MagicMock(run_local_server=MagicMock(return_value=MagicMock(valid=True)))
         
         mock_youtube_api = MagicMock()
         mock_build.return_value = mock_youtube_api
@@ -244,7 +245,7 @@ class TestYouTubeService(unittest.TestCase):
         service.youtube_api = None # Ensure youtube_api is None to force build call
         service._get_youtube_api()
         
-        mock_build.assert_called_once_with('youtube', 'v3', credentials=mock_creds)
+        mock_build.assert_called_once_with('youtube', 'v3', credentials=mock_flow.run_local_server.return_value)
     
     @patch('googleapiclient.discovery.build')
     @patch('googleapiclient.http.MediaFileUpload')
@@ -296,6 +297,7 @@ class TestYouTubeService(unittest.TestCase):
         """Test video upload without YouTube API initialized."""
         # Don't initialize the API
         self.service.youtube_api = None
+        self.service.credentials_file = None # Ensure credentials file is not provided
         
         with self.assertRaises(ValueError) as cm:
             self.service.upload_video("/tmp/test_video.mp4", "Test Video")
