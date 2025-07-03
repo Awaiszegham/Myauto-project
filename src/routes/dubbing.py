@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from flask_cors import cross_origin
 import logging
 import os
@@ -321,5 +321,27 @@ def cancel_task(task_id):
         
     except Exception as e:
         logger.error(f"Error cancelling task: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dubbing_bp.route('/download-dubbed-video/<task_id>', methods=['GET'])
+@cross_origin()
+def download_dubbed_video(task_id):
+    """Download the final dubbed video for a completed task."""
+    try:
+        task = VideoTask.query.get(task_id)
+
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+
+        if task.status != 'completed' or not task.final_video_path:
+            return jsonify({'error': 'Video not yet dubbed or task not completed'}), 400
+        
+        if not os.path.exists(task.final_video_path):
+            return jsonify({'error': 'Dubbed video file not found on server'}), 404
+
+        return send_file(task.final_video_path, as_attachment=True)
+
+    except Exception as e:
+        logger.error(f"Error downloading dubbed video for task {task_id}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
