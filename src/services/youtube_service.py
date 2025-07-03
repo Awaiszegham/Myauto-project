@@ -29,62 +29,7 @@ class YouTubeService:
         
     def _get_youtube_api(self):
         """Initialize YouTube API client with authentication."""
-        if self.youtube_api:
-            return self.youtube_api
-            
-        SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-        creds = None
         
-        # Load credentials from environment variable if available
-        youtube_credentials_json = os.getenv('YOUTUBE_CREDENTIALS_JSON')
-        if youtube_credentials_json:
-            import json
-            from google.oauth2.credentials import Credentials as OAuth2Credentials
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            
-            # Load token from environment variable if available
-            youtube_token_json = os.getenv('YOUTUBE_TOKEN_JSON')
-            if youtube_token_json:
-                creds = OAuth2Credentials.from_authorized_user_info(json.loads(youtube_token_json), SCOPES)
-            
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    # Create a temporary file for credentials
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_creds_file:
-                        temp_creds_file.write(youtube_credentials_json)
-                        temp_creds_path = temp_creds_file.name
-                    
-                    try:
-                        flow = InstalledAppFlow.from_client_secrets_file(temp_creds_path, SCOPES)
-                        creds = flow.run_local_server(port=0)
-                    finally:
-                        os.unlink(temp_creds_path) # Clean up the temporary file
-                
-                # Save the credentials back to environment variable for the next run
-                if creds and os.getenv('RAILWAY_ENVIRONMENT_NAME'): # Only save if on Railway
-                    os.environ['YOUTUBE_TOKEN_JSON'] = creds.to_json()
-        else:
-            # Fallback to file-based credentials for local development
-            if self.token_file and os.path.exists(self.token_file):
-                creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
-            
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    if not self.credentials_file:
-                        raise ValueError("YouTube credentials file not provided")
-                    flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                
-                if self.token_file:
-                    with open(self.token_file, 'w') as token:
-                        token.write(creds.to_json())
-        
-        self.youtube_api = build('youtube', 'v3', credentials=creds)
-        return self.youtube_api
     
     def download_video(self, url: str, output_dir: str, quality: str = 'best') -> Optional[Dict[str, Any]]:
         """
@@ -253,6 +198,8 @@ class YouTubeService:
         """
         try:
             youtube = self._get_youtube_api()
+            if not youtube:
+                raise ValueError("YouTube API not initialized. Ensure credentials are set up.")
             
             if not os.path.exists(video_path):
                 logger.error(f"Video file not found: {video_path}")

@@ -153,16 +153,16 @@ class AccuracyTestRunner:
         print("-" * 50)
         
         if accuracy >= 100.0:
-            print("✅ EXCELLENT: 100% accuracy achieved!")
+            print("EXCELLENT: 100% accuracy achieved!")
             status = "EXCELLENT"
         elif accuracy >= 95.0:
-            print("✅ VERY GOOD: 95%+ accuracy achieved")
+            print("VERY GOOD: 95%+ accuracy achieved")
             status = "VERY_GOOD"
         elif accuracy >= 90.0:
-            print("⚠️  GOOD: 90%+ accuracy achieved")
+            print("GOOD: 90%+ accuracy achieved")
             status = "GOOD"
         elif accuracy >= 80.0:
-            print("⚠️  ACCEPTABLE: 80%+ accuracy achieved")
+            print("ACCEPTABLE: 80%+ accuracy achieved")
             status = "ACCEPTABLE"
         else:
             print("❌ NEEDS IMPROVEMENT: Below 80% accuracy")
@@ -251,7 +251,7 @@ class AccuracyTestRunner:
         with open(report_file, 'w') as f:
             json.dump(report, f, indent=2)
         
-        print(f"\n📊 Detailed report saved to: {report_file}")
+        print(f"Detailed report saved to: {report_file}")
 
 def discover_tests():
     """Discover all test modules."""

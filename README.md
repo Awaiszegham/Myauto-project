@@ -27,7 +27,7 @@ The system consists of several key components:
 - Python 3.11+
 - Redis server
 - FFmpeg
-- Google Gemini CLI (installed and configured)
+- Google Gemini CLI (installed and configured separately from the Python library)
 - AWS credentials (for text-to-speech)
 - YouTube API credentials (for uploads)
 
