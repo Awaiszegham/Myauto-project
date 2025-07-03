@@ -11,6 +11,7 @@ class VideoTask(db.Model):
     youtube_url = db.Column(db.String(500), nullable=False)
     target_language = db.Column(db.String(10), nullable=False)
     source_language = db.Column(db.String(10), default='auto')
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(db.String(50), default='pending')  # pending, downloading, processing, uploading, completed, failed
     progress = db.Column(db.Integer, default=0)  # 0-100
     error_message = db.Column(db.Text, nullable=True)
@@ -39,6 +40,7 @@ class VideoTask(db.Model):
             'target_language': self.target_language,
             'source_language': self.source_language,
             'status': self.status,
+            'user_id': self.user_id,
             'progress': self.progress,
             'error_message': self.error_message,
             'uploaded_video_url': self.uploaded_video_url,

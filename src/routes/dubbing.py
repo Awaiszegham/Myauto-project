@@ -62,9 +62,10 @@ def start_dubbing():
         youtube_url = data.get('youtube_url')
         target_language = data.get('target_language')
         source_language = data.get('source_language', 'auto')
+        user_id = data.get('user_id') # Assuming user_id is provided in the request
         
-        if not youtube_url or not target_language:
-            return jsonify({'error': 'youtube_url and target_language are required'}), 400
+        if not youtube_url or not target_language or not user_id:
+            return jsonify({'error': 'youtube_url, target_language, and user_id are required'}), 400
         
         # Validate YouTube URL
         if 'youtube.com/watch' not in youtube_url and 'youtu.be/' not in youtube_url:
@@ -75,6 +76,7 @@ def start_dubbing():
             youtube_url=youtube_url,
             target_language=target_language,
             source_language=source_language,
+            user_id=user_id,
             status='pending'
         )
         
