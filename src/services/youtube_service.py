@@ -9,8 +9,9 @@ from typing import Optional, Dict, Any, List
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
+
+from src.services.adaptive_mitigation_service import AdaptiveMitigationService
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,7 @@ class YouTubeService:
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.youtube_api = None
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        ]
+        self.adaptive_mitigation_service = AdaptiveMitigationService()
         
     def _get_youtube_api(self):
         """Initialize YouTube API client with authentication."""
@@ -100,8 +97,11 @@ class YouTubeService:
         try:
             os.makedirs(output_dir, exist_ok=True)
             
-            # Random delay to avoid detection
-            time.sleep(random.uniform(1, 3))
+            # Get adaptive mitigation parameters
+            adaptive_params = self.adaptive_mitigation_service.get_adaptive_params()
+            
+            # Apply adaptive delay
+            time.sleep(adaptive_params.get('sleep_interval', random.uniform(1, 3)))
             
             # Configure yt-dlp with bot detection mitigation
             ydl_opts = {
@@ -117,9 +117,9 @@ class YouTubeService:
                 'audioquality': '192K',
                 
                 # Bot detection mitigation
-                'user_agent': random.choice(self.user_agents),
+                'user_agent': adaptive_params.get('user_agent', random.choice(self.user_agents)),
                 'referer': 'https://www.youtube.com/',
-                'sleep_interval': random.uniform(1, 3),
+                'sleep_interval': adaptive_params.get('sleep_interval', random.uniform(1, 3)),
                 'max_sleep_interval': 5,
                 'sleep_interval_subtitles': random.uniform(1, 2),
                 
@@ -139,14 +139,14 @@ class YouTubeService:
                 }
             }
             
-            # Add proxy support if configured
+            # Add proxy support if configured and adaptive service recommends
             proxy_url = os.getenv('PROXY_URL')
-            if proxy_url:
+            if adaptive_params.get('proxy_enabled', False) and proxy_url:
                 ydl_opts['proxy'] = proxy_url
             
-            # Add cookies if available
+            # Add cookies if available and adaptive service recommends
             cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
-            if cookies_file and os.path.exists(cookies_file):
+            if adaptive_params.get('cookies_enabled', False) and cookies_file and os.path.exists(cookies_file):
                 ydl_opts['cookiefile'] = cookies_file
             
             logger.info(f"Starting download for URL: {url}")
@@ -157,6 +157,19 @@ class YouTubeService:
                 
                 if not info:
                     logger.error("Failed to extract video information")
+                    log_data = {
+                        'timestamp': time.time(),
+                        'url': url,
+                        'success': False,
+                        'error_message': "Failed to extract video information",
+                        'mitigation_params': {
+                            'user_agent': ydl_opts.get('user_agent'),
+                            'sleep_interval': ydl_opts.get('sleep_interval'),
+                            'proxy_used': 'proxy' in ydl_opts,
+                            'cookies_used': 'cookiefile' in ydl_opts
+                        }
+                    }
+                    logger.error(f"Error downloading video: {json.dumps(log_data)}")
                     return None
                 
                 video_title = info.get('title', 'Unknown')
@@ -182,6 +195,21 @@ class YouTubeService:
                 
                 logger.info(f"Video downloaded successfully: {video_path}")
                 
+                log_data = {
+                    'timestamp': time.time(),
+                    'url': url,
+                    'success': True,
+                    'error_message': None,
+                    'mitigation_params': {
+                        'user_agent': ydl_opts.get('user_agent'),
+                        'sleep_interval': ydl_opts.get('sleep_interval'),
+                        'proxy_used': 'proxy' in ydl_opts,
+                        'cookies_used': 'cookiefile' in ydl_opts
+                    }
+                }
+                self.adaptive_mitigation_service.record_outcome(log_data)
+                logger.info(f"Download successful: {json.dumps(log_data)}")
+                
                 return {
                     'video_path': video_path,
                     'title': video_title,
@@ -191,7 +219,20 @@ class YouTubeService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error downloading video: {e}")
+            error_message = str(e)
+            log_data = {
+                'timestamp': time.time(),
+                'url': url,
+                'success': False,
+                'error_message': error_message,
+                'mitigation_params': {
+                    'user_agent': ydl_opts.get('user_agent') if 'ydl_opts' in locals() else None,
+                    'sleep_interval': ydl_opts.get('sleep_interval') if 'ydl_opts' in locals() else None,
+                    'proxy_used': 'proxy' in ydl_opts if 'ydl_opts' in locals() else False,
+                    'cookies_used': 'cookiefile' in ydl_opts if 'ydl_opts' in locals() else False
+                }
+            }
+            logger.error(f"Error downloading video: {json.dumps(log_data)}")
             return None
     
     def extract_audio(self, video_path: str, output_dir: str) -> Optional[str]:
