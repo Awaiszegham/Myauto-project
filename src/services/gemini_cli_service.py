@@ -13,14 +13,31 @@ class GeminiCLIService:
     def __init__(self):
         self.cli_command = "gemini"  # Assuming gemini CLI is in PATH
         
-    def check_cli_availability(self) -> bool:
-        """Check if Gemini CLI is available and properly configured."""
+    def check_cli_availability(self) -> dict:
+        """Check if Gemini CLI is available and properly configured. Returns a dict with details."""
         try:
-            result = subprocess.run([self.cli_command, "--version"], 
-                                  capture_output=True, text=True, timeout=10)
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+            result = subprocess.run(
+                [self.cli_command, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False
+            )
+            if result.returncode == 0:
+                return {"available": True, "output": result.stdout.strip()}
+            else:
+                return {
+                    "available": False,
+                    "error": result.stderr.strip(),
+                    "stdout": result.stdout.strip(),
+                    "returncode": result.returncode
+                }
+        except FileNotFoundError:
+            return {"available": False, "error": f"Command '{self.cli_command}' not found."}
+        except subprocess.TimeoutExpired:
+            return {"available": False, "error": "Command timed out."}
+        except Exception as e:
+            return {"available": False, "error": str(e)}
     
     def transcribe_audio(self, audio_file_path: str, language: str = "auto") -> Optional[Dict[str, Any]]:
         """

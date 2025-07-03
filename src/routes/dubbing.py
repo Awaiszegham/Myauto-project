@@ -34,17 +34,16 @@ celery.conf.update(
 def health_check():
     """Health check endpoint."""
     try:
-        # Check Gemini CLI availability
-        gemini_available = gemini_service.check_cli_availability()
+        gemini_status = gemini_service.check_cli_availability()
         
         return jsonify({
-            'status': 'healthy',
+            'status': 'healthy' if gemini_status['available'] else 'unhealthy',
             'services': {
-                'gemini_cli': gemini_available,
+                'gemini_cli': gemini_status,
                 'database': True,  # If we reach here, DB is working
                 'audio_service': audio_service.polly_client is not None
             }
-        }), 200
+        }), 200 if gemini_status['available'] else 503
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
