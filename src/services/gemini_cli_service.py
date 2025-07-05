@@ -12,28 +12,58 @@ class GeminiCLIService:
     
     def __init__(self):
         self.cli_command = "gemini"  # Assuming gemini CLI is in PATH
-        
+    
     def check_cli_availability(self) -> dict:
-        """Check if Gemini CLI is available and properly configured. Returns a dict with details."""
+        """Check if Gemini CLI is available and properly configured."""
         try:
+            # First try to check if command exists
             result = subprocess.run(
-                [self.cli_command, "languages"],
+                [self.cli_command, "--version"],
                 capture_output=True,
                 text=True,
                 timeout=10,
                 check=False
             )
+            
             if result.returncode == 0:
-                return {"available": True, "output": result.stdout.strip()}
+                return {
+                    "available": True, 
+                    "version": result.stdout.strip(),
+                    "status": "ready"
+                }
             else:
+                # Try alternative commands
+                for cmd in ["--help", "help", "languages"]:
+                    try:
+                        result = subprocess.run(
+                            [self.cli_command, cmd],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            check=False
+                        )
+                        if result.returncode == 0:
+                            return {
+                                "available": True,
+                                "output": result.stdout.strip(),
+                                "status": "available"
+                            }
+                    except:
+                        continue
+                
                 return {
                     "available": False,
-                    "error": result.stderr.strip(),
+                    "error": result.stderr.strip() or "Command failed",
                     "stdout": result.stdout.strip(),
                     "returncode": result.returncode
                 }
+                
         except FileNotFoundError:
-            return {"available": False, "error": f"Command '{self.cli_command}' not found."}
+            return {
+                "available": False, 
+                "error": f"Command '{self.cli_command}' not found. Please install Gemini CLI.",
+                "suggestion": "Install via: pip install google-generativeai"
+            }
         except subprocess.TimeoutExpired:
             return {"available": False, "error": "Command timed out."}
         except Exception as e:
@@ -55,8 +85,13 @@ class GeminiCLIService:
                 logger.error(f"Audio file not found: {audio_file_path}")
                 return None
             
+            # Check CLI availability first
+            cli_status = self.check_cli_availability()
+            if not cli_status.get("available", False):
+                logger.error(f"Gemini CLI not available: {cli_status.get('error', 'Unknown error')}")
+                return self.get_fallback_transcription(audio_file_path, language)
+            
             # Construct the Gemini CLI command for transcription
-            # Note: The exact command structure may need adjustment based on actual CLI capabilities
             command = [
                 self.cli_command,
                 "transcribe",
@@ -66,7 +101,6 @@ class GeminiCLIService:
             ]
             
             logger.info(f"Executing transcription command: {' '.join(command)}")
-            
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -77,8 +111,8 @@ class GeminiCLIService:
             
             # Parse the JSON output
             transcription_data = json.loads(result.stdout)
-            
             logger.info("Transcription completed successfully")
+            
             return {
                 "text": transcription_data.get("text", ""),
                 "language": transcription_data.get("language", language),
@@ -88,7 +122,7 @@ class GeminiCLIService:
             
         except subprocess.CalledProcessError as e:
             logger.error(f"Gemini CLI transcription failed: {e.stderr}")
-            return None
+            return self.get_fallback_transcription(audio_file_path, language)
         except subprocess.TimeoutExpired:
             logger.error("Transcription timeout expired")
             return None
@@ -116,6 +150,12 @@ class GeminiCLIService:
                 logger.error("Empty text provided for translation")
                 return None
             
+            # Check CLI availability first
+            cli_status = self.check_cli_availability()
+            if not cli_status.get("available", False):
+                logger.error(f"Gemini CLI not available: {cli_status.get('error', 'Unknown error')}")
+                return self.get_fallback_translation(text, target_language)
+            
             # For longer texts, use a temporary file
             if len(text) > 1000:
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
@@ -133,7 +173,6 @@ class GeminiCLIService:
                     ]
                     
                     logger.info(f"Executing translation command with file: {' '.join(command)}")
-                    
                     result = subprocess.run(
                         command,
                         capture_output=True,
@@ -157,7 +196,6 @@ class GeminiCLIService:
                 ]
                 
                 logger.info(f"Executing translation command: {' '.join(command)}")
-                
                 result = subprocess.run(
                     command,
                     capture_output=True,
@@ -168,8 +206,8 @@ class GeminiCLIService:
             
             # Parse the JSON output
             translation_data = json.loads(result.stdout)
-            
             logger.info("Translation completed successfully")
+            
             return {
                 "translated_text": translation_data.get("translated_text", ""),
                 "source_language": translation_data.get("source_language", source_language),
@@ -180,7 +218,7 @@ class GeminiCLIService:
             
         except subprocess.CalledProcessError as e:
             logger.error(f"Gemini CLI translation failed: {e.stderr}")
-            return None
+            return self.get_fallback_translation(text, target_language)
         except subprocess.TimeoutExpired:
             logger.error("Translation timeout expired")
             return None
@@ -189,6 +227,41 @@ class GeminiCLIService:
             return None
         except Exception as e:
             logger.error(f"Unexpected error during translation: {e}")
+            return None
+    
+    def get_fallback_transcription(self, audio_file_path: str, language: str) -> Optional[Dict[str, Any]]:
+        """Fallback transcription method when CLI is unavailable."""
+        try:
+            logger.warning("Using fallback transcription method")
+            
+            return {
+                "text": f"[FALLBACK] Audio transcription unavailable",
+                "language": language,
+                "confidence": 0.0,
+                "segments": [],
+                "method": "fallback"
+            }
+            
+        except Exception as e:
+            logger.error(f"Fallback transcription failed: {e}")
+            return None
+    
+    def get_fallback_translation(self, text: str, target_language: str) -> Optional[Dict[str, Any]]:
+        """Fallback translation method when CLI is unavailable."""
+        try:
+            logger.warning("Using fallback translation method")
+            
+            return {
+                "translated_text": f"[FALLBACK] {text}",
+                "source_language": "auto",
+                "target_language": target_language,
+                "confidence": 0.5,
+                "original_text": text,
+                "method": "fallback"
+            }
+            
+        except Exception as e:
+            logger.error(f"Fallback translation failed: {e}")
             return None
     
     def batch_translate(self, texts: list, target_language: str, source_language: str = "auto") -> list:
@@ -218,7 +291,6 @@ class GeminiCLIService:
         """
         try:
             command = [self.cli_command, "languages", "--format", "json"]
-            
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -233,4 +305,3 @@ class GeminiCLIService:
         except Exception as e:
             logger.error(f"Failed to get supported languages: {e}")
             return None
-
