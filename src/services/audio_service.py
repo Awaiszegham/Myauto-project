@@ -115,7 +115,7 @@ class AudioService:
             logger.error(f"Error preprocessing audio: {e}")
             return None
     
-    def text_to_speech(self, text: str, language_code: str = 'en-US', 
+    def text_to_speech(self, text: str, language_code: str = 'en-US',
                       voice_id: str = None, output_path: str = None) -> Optional[str]:
         """
         Convert text to speech using AWS Polly.
@@ -136,6 +136,11 @@ class AudioService:
             
             if not text.strip():
                 logger.error("Empty text provided for TTS")
+                return None
+            
+            # Validate AWS credentials
+            if not self.validate_aws_credentials():
+                logger.error("Invalid AWS credentials")
                 return None
             
             # Get appropriate voice if not specified
@@ -271,12 +276,25 @@ class AudioService:
             
             audio = AudioSegment.from_file(audio_path)
             duration = len(audio) / 1000.0  # Convert milliseconds to seconds
-            
             return duration
             
         except Exception as e:
             logger.error(f"Error getting audio duration: {e}")
             return None
+    
+    def validate_aws_credentials(self) -> bool:
+        """Validate AWS credentials for Polly service."""
+        try:
+            if not self.polly_client:
+                return False
+            
+            # Test connection with a simple describe_voices call
+            response = self.polly_client.describe_voices(MaxResults=1)
+            return True
+            
+        except Exception as e:
+            logger.error(f"AWS credentials validation failed: {e}")
+            return False
     
     def _get_default_voice(self, language_code: str) -> str:
         """Get default voice for a language code."""
@@ -339,4 +357,3 @@ class AudioService:
         except Exception as e:
             logger.error(f"Error getting available voices: {e}")
             return []
-
