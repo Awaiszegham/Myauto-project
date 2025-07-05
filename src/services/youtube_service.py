@@ -5,12 +5,14 @@ import random
 import time
 import tempfile
 import json
+import re
+import subprocess
 from typing import Optional, Dict, Any, List
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-
+from google_auth_oauthlib.flow import InstalledAppFlow
 from src.services.adaptive_mitigation_service import AdaptiveMitigationService
 
 logger = logging.getLogger(__name__)
@@ -23,68 +25,85 @@ class YouTubeService:
         self.token_file = token_file
         self.youtube_api = None
         self.adaptive_mitigation_service = AdaptiveMitigationService()
-        
+    
     def _get_youtube_api(self):
         """Initialize YouTube API client with authentication."""
         if self.youtube_api:
             return self.youtube_api
-            
+        
         SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
         creds = None
         
-        # Load credentials from environment variable if available
-        youtube_credentials_json = os.getenv('YOUTUBE_CREDENTIALS_JSON')
-        if youtube_credentials_json:
-            import json
-            from google.oauth2.credentials import Credentials as OAuth2Credentials
-            
-            # Load token from environment variable if available
-            youtube_token_json = os.getenv('YOUTUBE_TOKEN_JSON')
-            if youtube_token_json:
-                creds = OAuth2Credentials.from_authorized_user_info(json.loads(youtube_token_json), SCOPES)
-            
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    # Create a temporary file for credentials
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_creds_file:
-                        temp_creds_file.write(youtube_credentials_json)
-                        temp_creds_path = temp_creds_file.name
-                    
-                    try:
-                        flow = InstalledAppFlow.from_client_secrets_file(temp_creds_path, SCOPES)
-                        creds = flow.run_local_server(port=0)
-                    finally:
-                        os.unlink(temp_creds_path) # Clean up the temporary file
+        try:
+            # Load credentials from environment variable if available
+            youtube_credentials_json = os.getenv('YOUTUBE_CREDENTIALS_JSON')
+            if youtube_credentials_json:
+                # Load token from environment variable if available
+                youtube_token_json = os.getenv('YOUTUBE_TOKEN_JSON')
+                if youtube_token_json:
+                    creds = Credentials.from_authorized_user_info(
+                        json.loads(youtube_token_json), SCOPES
+                    )
                 
-                # Save the credentials back to environment variable for the next run
-                if creds and os.getenv('RAILWAY_ENVIRONMENT_NAME'): # Only save if on Railway
-                    os.environ['YOUTUBE_TOKEN_JSON'] = creds.to_json()
-        else:
+                if not creds or not creds.valid:
+                    if creds and creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                    else:
+                        # For Railway deployment, use service account or pre-configured tokens
+                        logger.warning("YouTube API credentials need refresh but running in production")
+                        return None
+            
             # Fallback to file-based credentials for local development
-            if self.token_file and os.path.exists(self.token_file):
+            elif self.token_file and os.path.exists(self.token_file):
                 creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
-            
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    if not self.credentials_file:
-                        raise ValueError("YouTube credentials file not provided")
-                    flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
-                    creds = flow.run_local_server(port=0)
                 
-                if self.token_file:
-                    with open(self.token_file, 'w') as token:
-                        token.write(creds.to_json())
-        
-        self.youtube_api = build('youtube', 'v3', credentials=creds)
-        return self.youtube_api
+                if not creds or not creds.valid:
+                    if creds and creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                    else:
+                        if not self.credentials_file:
+                            logger.error("YouTube credentials file not provided")
+                            return None
+                        
+                        # Only run interactive flow in development
+                        if not os.getenv('RAILWAY_ENVIRONMENT_NAME'):
+                            flow = InstalledAppFlow.from_client_secrets_file(
+                                self.credentials_file, SCOPES
+                            )
+                            creds = flow.run_local_server(port=0)
+                            
+                            if self.token_file:
+                                with open(self.token_file, 'w') as token:
+                                    token.write(creds.to_json())
+                        else:
+                            logger.error("Cannot run interactive auth flow in production")
+                            return None
+            
+            if creds:
+                self.youtube_api = build('youtube', 'v3', credentials=creds)
+                return self.youtube_api
+            else:
+                logger.error("No valid YouTube API credentials available")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error initializing YouTube API: {e}")
+            return None
+    
+    def validate_video_url(self, url: str) -> bool:
+        """Validate if URL is a valid YouTube video URL."""
+        try:
+            youtube_regex = re.compile(
+                r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/'
+                r'(watch\?v=|embed/|v/|.+\?v=)?([^&=%\?]{11})'
+            )
+            return bool(youtube_regex.match(url))
+        except:
+            return False
     
     def download_video(self, url: str, output_dir: str, quality: str = 'best') -> Optional[Dict[str, Any]]:
         """
-        Download video from YouTube with bot detection mitigation.
+        Download video from YouTube with enhanced error handling.
         
         Args:
             url: YouTube video URL
@@ -95,6 +114,11 @@ class YouTubeService:
             Dictionary containing download information or None if failed
         """
         try:
+            # Validate URL first
+            if not self.validate_video_url(url):
+                logger.error(f"Invalid YouTube URL: {url}")
+                return None
+            
             os.makedirs(output_dir, exist_ok=True)
             
             # Get adaptive mitigation parameters
@@ -103,32 +127,20 @@ class YouTubeService:
             # Apply adaptive delay
             time.sleep(adaptive_params.get('sleep_interval', random.uniform(1, 3)))
             
-            # Configure yt-dlp with bot detection mitigation
+            # Configure yt-dlp with enhanced options
             ydl_opts = {
                 'format': quality,
                 'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
                 'writeinfojson': True,
-                'writesubtitles': False,
-                'writeautomaticsub': False,
                 'ignoreerrors': True,
                 'no_warnings': False,
                 'extractaudio': False,
-                'audioformat': 'mp3',
-                'audioquality': '192K',
-                
-                # Bot detection mitigation
-                'user_agent': adaptive_params.get('user_agent', random.choice(self.user_agents)),
+                'user_agent': adaptive_params.get('user_agent'),
                 'referer': 'https://www.youtube.com/',
                 'sleep_interval': adaptive_params.get('sleep_interval', random.uniform(1, 3)),
-                'max_sleep_interval': 5,
-                'sleep_interval_subtitles': random.uniform(1, 2),
-                
-                # Retry configuration
                 'retries': 3,
                 'fragment_retries': 3,
                 'skip_unavailable_fragments': True,
-                
-                # Additional headers to appear more browser-like
                 'http_headers': {
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'en-us,en;q=0.5',
@@ -139,12 +151,12 @@ class YouTubeService:
                 }
             }
             
-            # Add proxy support if configured and adaptive service recommends
+            # Add proxy support if configured
             proxy_url = os.getenv('PROXY_URL')
             if adaptive_params.get('proxy_enabled', False) and proxy_url:
                 ydl_opts['proxy'] = proxy_url
             
-            # Add cookies if available and adaptive service recommends
+            # Add cookies if available
             cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
             if adaptive_params.get('cookies_enabled', False) and cookies_file and os.path.exists(cookies_file):
                 ydl_opts['cookiefile'] = cookies_file
@@ -157,24 +169,23 @@ class YouTubeService:
                 
                 if not info:
                     logger.error("Failed to extract video information")
-                    log_data = {
-                        'timestamp': time.time(),
-                        'url': url,
-                        'success': False,
-                        'error_message': "Failed to extract video information",
-                        'mitigation_params': {
-                            'user_agent': ydl_opts.get('user_agent'),
-                            'sleep_interval': ydl_opts.get('sleep_interval'),
-                            'proxy_used': 'proxy' in ydl_opts,
-                            'cookies_used': 'cookiefile' in ydl_opts
-                        }
-                    }
-                    logger.error(f"Error downloading video: {json.dumps(log_data)}")
+                    self._log_download_outcome(url, False, "Failed to extract video information", ydl_opts)
+                    return None
+                
+                # Check video availability
+                if info.get('is_live'):
+                    logger.error("Cannot download live streams")
                     return None
                 
                 video_title = info.get('title', 'Unknown')
                 video_duration = info.get('duration', 0)
                 video_id = info.get('id', '')
+                
+                # Check duration limits (optional)
+                max_duration = int(os.getenv('MAX_VIDEO_DURATION', 3600))  # 1 hour default
+                if video_duration > max_duration:
+                    logger.error(f"Video too long: {video_duration}s (max: {max_duration}s)")
+                    return None
                 
                 logger.info(f"Video info extracted: {video_title} ({video_duration}s)")
                 
@@ -184,31 +195,17 @@ class YouTubeService:
                 # Find the downloaded file
                 downloaded_files = []
                 for file in os.listdir(output_dir):
-                    if file.endswith(('.mp4', '.mkv', '.webm', '.avi')):
+                    if file.endswith(('.mp4', '.mkv', '.webm', '.avi')) and video_title.replace(' ', '_') in file:
                         downloaded_files.append(os.path.join(output_dir, file))
                 
                 if not downloaded_files:
                     logger.error("No video file found after download")
                     return None
                 
-                video_path = downloaded_files[0]  # Take the first video file
-                
+                video_path = downloaded_files[0]
                 logger.info(f"Video downloaded successfully: {video_path}")
                 
-                log_data = {
-                    'timestamp': time.time(),
-                    'url': url,
-                    'success': True,
-                    'error_message': None,
-                    'mitigation_params': {
-                        'user_agent': ydl_opts.get('user_agent'),
-                        'sleep_interval': ydl_opts.get('sleep_interval'),
-                        'proxy_used': 'proxy' in ydl_opts,
-                        'cookies_used': 'cookiefile' in ydl_opts
-                    }
-                }
-                self.adaptive_mitigation_service.record_outcome(log_data)
-                logger.info(f"Download successful: {json.dumps(log_data)}")
+                self._log_download_outcome(url, True, None, ydl_opts)
                 
                 return {
                     'video_path': video_path,
@@ -220,20 +217,26 @@ class YouTubeService:
                 
         except Exception as e:
             error_message = str(e)
-            log_data = {
-                'timestamp': time.time(),
-                'url': url,
-                'success': False,
-                'error_message': error_message,
-                'mitigation_params': {
-                    'user_agent': ydl_opts.get('user_agent') if 'ydl_opts' in locals() else None,
-                    'sleep_interval': ydl_opts.get('sleep_interval') if 'ydl_opts' in locals() else None,
-                    'proxy_used': 'proxy' in ydl_opts if 'ydl_opts' in locals() else False,
-                    'cookies_used': 'cookiefile' in ydl_opts if 'ydl_opts' in locals() else False
-                }
-            }
-            logger.error(f"Error downloading video: {json.dumps(log_data)}")
+            logger.error(f"Error downloading video: {error_message}")
+            self._log_download_outcome(url, False, error_message, ydl_opts if 'ydl_opts' in locals() else {})
             return None
+    
+    def _log_download_outcome(self, url: str, success: bool, error_message: str, ydl_opts: dict):
+        """Log download outcome for adaptive mitigation."""
+        log_data = {
+            'timestamp': time.time(),
+            'url': url,
+            'success': success,
+            'error_message': error_message,
+            'mitigation_params': {
+                'user_agent': ydl_opts.get('user_agent'),
+                'sleep_interval': ydl_opts.get('sleep_interval'),
+                'proxy_used': 'proxy' in ydl_opts,
+                'cookies_used': 'cookiefile' in ydl_opts
+            }
+        }
+        
+        self.adaptive_mitigation_service.record_outcome(log_data)
     
     def extract_audio(self, video_path: str, output_dir: str) -> Optional[str]:
         """
@@ -276,7 +279,7 @@ class YouTubeService:
             logger.error(f"Error extracting audio: {e}")
             return None
     
-    def upload_video(self, video_path: str, title: str, description: str = "", 
+    def upload_video(self, video_path: str, title: str, description: str = "",
                     tags: List[str] = None, privacy_status: str = "private") -> Optional[Dict[str, Any]]:
         """
         Upload video to YouTube.
@@ -348,7 +351,6 @@ class YouTubeService:
             if response:
                 video_id = response['id']
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
-                
                 logger.info(f"Video uploaded successfully: {video_url}")
                 
                 return {
@@ -376,6 +378,10 @@ class YouTubeService:
             Dictionary containing video information or None if failed
         """
         try:
+            if not self.validate_video_url(url):
+                logger.error(f"Invalid YouTube URL: {url}")
+                return None
+            
             ydl_opts = {
                 'quiet': True,
                 'no_warnings': True,
