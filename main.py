@@ -16,12 +16,13 @@ def health():
     return {"status": "healthy", "service": "youtube-dubbing-ai"}, 200
 
 if __name__ == '__main__':
-    # Get port from Railway environment
-    port = int(os.getenv('PORT', 5000))
+    # Get port from Railway environment (correct default for Railway)
+    port = int(os.getenv('PORT', 8080))  # ← Fixed: Railway default port
     
-    # Run application
+    # Run application (only for local development)
+    print(f"Starting development server on port {port}")
     app.run(
         host='0.0.0.0', 
         port=port, 
-        debug=False  # Always False in production
+        debug=False
     )
