@@ -1,0 +1,43 @@
+# Core Flask dependencies
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-CORS==4.0.0
+Flask-Migrate==4.0.5
+
+# Database
+psycopg2-binary==2.9.7
+SQLAlchemy==2.0.19
+
+# Task queue
+celery==5.3.1
+redis==4.6.0
+
+# YouTube downloading
+yt-dlp==2023.7.6
+
+# Audio processing
+pydub==0.25.1
+ffmpeg-python==0.2.0
+
+# AWS services
+boto3==1.28.25
+botocore==1.31.25
+
+# Google services
+google-auth==2.22.0
+google-auth-oauthlib==1.0.0
+google-auth-httplib2==0.1.0
+google-api-python-client==2.97.0
+google-generativeai==0.1.0
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+Pillow==10.0.0
+
+# Production server
+gunicorn==21.2.0
+
+# Development
+pytest==7.4.0
+pytest-flask==1.2.0

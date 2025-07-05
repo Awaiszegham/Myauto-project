@@ -1,0 +1,427 @@
+{
+  "name": "YouTube Dubbing Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "triggerOn": "newRow"
+      },
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://myauto-project-production.up.railway.app/api/dubbing/start-dubbing",
+        "options": {},
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "youtube_url",
+              "value": "={{$json.YouTube_URL}}"
+            },
+            {
+              "name": "target_language",
+              "value": "={{$json.Target_Language}}"
+            },
+            {
+              "name": "source_language",
+              "value": "={{$json.Source_Language || 'auto'}}"
+            }
+          ]
+        }
+      },
+      "name": "Start Dubbing Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowIndex": "={{$json.n8n.workflow.triggerData.row_index}}",
+        "columns": {
+          "values": [
+            {
+              "columnName": "Task_ID",
+              "value": "={{$node['Start Dubbing Task'].json.task_id}}"
+            },
+            {
+              "columnName": "Status",
+              "value": "pending"
+            },
+            {
+              "columnName": "Progress",
+              "value": 0
+            }
+          ]
+        }
+      },
+      "name": "Update Task ID & Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "value1": "={{$node['Get Task Status'].json.status}}",
+              "operation": "notEqual",
+              "value2": "completed"
+            },
+            {
+              "value1": "={{$node['Get Task Status'].json.status}}",
+              "operation": "notEqual",
+              "value2": "failed"
+            }
+          ]
+        }
+      },
+      "name": "Loop Condition",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "time": 15,
+        "unit": "seconds"
+      },
+      "name": "Wait 15s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://myauto-project-production.up.railway.app/api/dubbing/task-status/{{$node['Update Task ID & Status'].json.Task_ID}}",
+        "options": {}
+      },
+      "name": "Get Task Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowIndex": "={{$json.n8n.workflow.triggerData.row_index}}",
+        "columns": {
+          "values": [
+            {
+              "columnName": "Status",
+              "value": "={{$node['Get Task Status'].json.status}}"
+            },
+            {
+              "columnName": "Progress",
+              "value": "={{$node['Get Task Status'].json.progress}}"
+            },
+            {
+              "columnName": "Error_Message",
+              "value": "={{$node['Get Task Status'].json.error_message || ''}}"
+            }
+          ]
+        }
+      },
+      "name": "Update Status & Progress",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "value1": "={{$node['Get Task Status'].json.status}}",
+              "operation": "equal",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "name": "If Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowIndex": "={{$json.n8n.workflow.triggerData.row_index}}",
+        "columns": {
+          "values": [
+            {
+              "columnName": "Dubbed_Video_URL",
+              "value": "={{$node['Get Task Status'].json.uploaded_video_url || ''}}"
+            }
+          ]
+        }
+      },
+      "name": "Update Final URL",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowIndex": "={{$json.n8n.workflow.triggerData.row_index}}",
+        "columns": {
+          "values": [
+            {
+              "columnName": "Status",
+              "value": "failed"
+            },
+            {
+              "columnName": "Error_Message",
+              "value": "Dubbing process failed on server."
+            }
+          ]
+        }
+      },
+      "name": "Update Error - Dubbing Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        600
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowIndex": "={{$json.n8n.workflow.triggerData.row_index}}",
+        "columns": {
+          "values": [
+            {
+              "columnName": "Status",
+              "value": "failed"
+            },
+            {
+              "columnName": "Error_Message",
+              "value": "Failed to initiate dubbing process. Check Railway app URL or API payload."
+            }
+          ]
+        }
+      },
+      "name": "Update Error - API Call Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        850,
+        500
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIALS_ID",
+          "name": "Google Sheets Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Start Dubbing Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Dubbing Task": {
+      "main": [
+        [
+          {
+            "node": "Update Task ID & Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task ID & Status": {
+      "main": [
+        [
+          {
+            "node": "Loop Condition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Condition": {
+      "main": [
+        [
+          {
+            "node": "Wait 15s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s": {
+      "main": [
+        [
+          {
+            "node": "Get Task Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Task Status": {
+      "main": [
+        [
+          {
+            "node": "Update Status & Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status & Progress": {
+      "main": [
+        [
+          {
+            "node": "Loop Condition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Completed": {
+      "main": [
+        [
+          {
+            "node": "Update Final URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Error - Dubbing Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
