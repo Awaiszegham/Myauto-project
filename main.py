@@ -5,7 +5,12 @@ Railway deployment entry point.
 
 import os
 import sys
+import logging
 from src import create_app
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Create Flask application using factory pattern
 app = create_app()
@@ -16,11 +21,14 @@ def health():
     return {"status": "healthy", "service": "youtube-dubbing-ai"}, 200
 
 if __name__ == '__main__':
-    # Get port from Railway environment (correct default for Railway)
-    port = int(os.getenv('PORT', 8080))  # ← Fixed: Railway default port
+    # Get port from Railway environment
+    port = int(os.getenv('PORT', 8080))
     
-    # Run application (only for local development)
-    print(f"Starting development server on port {port}")
+    # Log startup information
+    logger.info(f"Starting application on port {port}")
+    logger.info(f"Environment: {os.getenv('FLASK_ENV', 'development')}")
+    
+    # Run application
     app.run(
         host='0.0.0.0', 
         port=port, 
