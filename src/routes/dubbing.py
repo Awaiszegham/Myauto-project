@@ -22,8 +22,6 @@ gemini_service = GeminiCLIService()
 youtube_service = YouTubeService()
 audio_service = AudioService()
 
-
-
 @dubbing_bp.route('/start-dubbing', methods=['POST'])
 @cross_origin()
 def start_dubbing():
